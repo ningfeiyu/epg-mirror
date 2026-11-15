@@ -1,0 +1,38 @@
+name: Icon mirror to R2
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  icons:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sparse checkout icon dir
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/taksssss/tv.git tv-src
+          cd tv-src
+          git sparse-checkout set icon iconList_default.json
+          echo "icon count: $(ls icon | wc -l)"
+
+      - name: Sync icons to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          aws s3 sync tv-src/icon "s3://$R2_BUCKET/icon/" \
+            --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --size-only --content-type "image/png" \
+            --cache-control "public, max-age=86400" --only-show-errors
+          aws s3 cp tv-src/iconList_default.json "s3://$R2_BUCKET/iconList_default.json" \
+            --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --content-type "application/json" \
+            --cache-control "public, max-age=86400" --only-show-errors
+          echo "icons synced"
