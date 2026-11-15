@@ -16,7 +16,7 @@ jobs:
         run: |
           git clone --depth 1 --filter=blob:none --sparse https://github.com/taksssss/tv.git tv-src
           cd tv-src
-          git sparse-checkout set icon iconList_default.json
+          git sparse-checkout set --no-cone icon iconList_default.json
           echo "icon count: $(ls icon | wc -l)"
 
       - name: Sync icons to R2
