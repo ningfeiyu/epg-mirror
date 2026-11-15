@@ -1,0 +1,79 @@
+name: EPG mirror to R2
+
+on:
+  schedule:
+    - cron: '40 */2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq libxml2-utils file > /dev/null
+
+      - name: Fetch, fix and upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          set -u
+          mkdir -p out
+          FAILED=""
+          OK=""
+          while read -r filename url; do
+            src="$url"
+            if [[ "$url" == proxy:* ]]; then
+              src="${url#proxy:}"
+              echo "[$filename] 直连尝试（原作者走代理源）：$src"
+            fi
+            raw="out/$filename.raw"
+            http=$(curl -k -L --retry 3 --retry-delay 5 -w "%{http_code}" -o "$raw" "$src" || echo 0)
+            if [ "$http" != "200" ]; then
+              echo "[$filename] 下载失败 HTTP $http，保留 R2 旧文件"
+              FAILED="$FAILED $filename(HTTP $http)"
+              rm -f "$raw"
+              continue
+            fi
+            mime=$(file -b --mime-type "$raw")
+            tmp="out/$filename"
+            if [[ "$mime" == *"gzip"* ]]; then gunzip -c "$raw" > "$tmp"; else mv "$raw" "$tmp"; fi
+            rm -f "$raw"
+            if [[ "$src" == *"epg.pw"* ]]; then sed -i 's/+0000/+0800/g' "$tmp"; fi
+            if ! xmllint --noout "$tmp" 2>/dev/null; then
+              echo "[$filename] XML 无效，跳过"
+              FAILED="$FAILED $filename(XML无效)"
+              rm -f "$tmp"
+              continue
+            fi
+            gzip -kf -9 "$tmp"
+            rm -f "$tmp"
+            aws s3 cp "out/$filename.gz" "s3://$R2_BUCKET/epg/$filename.gz" \
+              --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" \
+              --content-type "application/gzip" \
+              --cache-control "public, max-age=7200" \
+              --only-show-errors
+            size=$(stat -c%s "out/$filename.gz")
+            echo "[$filename] 已上传 ${size}B"
+            OK="$OK $filename(${size}B)"
+            rm -f "out/$filename.gz"
+          done < <(jq -r 'to_entries[] | "\(.key) \(.value)"' files.json)
+          {
+            echo "## EPG 镜像 $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
+            echo ""
+            echo "成功：${OK:-无}"
+            echo ""
+            echo "失败（已保留 R2 旧文件）：${FAILED:-无}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ -z "$FAILED" ] || echo "::warning::部分源失败：$FAILED"
