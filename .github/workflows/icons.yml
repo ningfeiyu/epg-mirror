@@ -19,6 +19,12 @@ jobs:
           git sparse-checkout set --no-cone icon iconList_default.json
           echo "icon count: $(ls icon | wc -l)"
 
+      - name: Rewrite iconList URLs to R2 domain
+        run: |
+          sed -i 's|https://gcore.jsdelivr.net/gh/taksssss/tv/icon/|https://c.ningop.com/icon/|g' tv-src/iconList_default.json
+          echo "remaining jsdelivr refs: $(grep -c gcore.jsdelivr.net tv-src/iconList_default.json || true)"
+          echo "r2 refs: $(grep -c c.ningop.com/icon/ tv-src/iconList_default.json)"
+
       - name: Sync icons to R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
