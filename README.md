@@ -23,6 +23,15 @@ EPG 节目单镜像：每 2 小时从上游拉取 8 个源，修正时区后上�
 https://<R2 公开域名>/epg/51zmt.xml.gz
 ```
 
+## 台标
+
+`icons.yml` 每周日 03:00（UTC）同步一次原仓库 `icon/` 目录（1000+ 个台标 png）与 `iconList_default.json` 到 R2，缓存 24 小时：
+
+```
+https://<R2 公开域名>/icon/<台标文件名>.png
+https://<R2 公开域名>/iconList_default.json
+```
+
 ## 运行方式
 
 - 定时：`40 */2 * * *`（每 2 小时）
